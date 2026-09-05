@@ -231,8 +231,14 @@ async def health():
     report = {
         "python": sys.version.split()[0],
         "on_vercel": bool(os.environ.get("VERCEL")),
+        "commit": os.environ.get("VERCEL_GIT_COMMIT_SHA", "")[:7] or None,
         "init_error": INIT_ERROR,
         "bot_token_set": bool(raw_token and raw_token != "YOUR_BOT_TOKEN_HERE"),
+        # Qiymat emas, faqat holati - o'zgaruvchi umuman yetib kelganmi yoki bo'shmi.
+        "bot_token_debug": {
+            "env_da_bormi": "BOT_TOKEN" in os.environ,
+            "uzunligi": len(raw_token),
+        },
         "admin_secret_set": bool(os.environ.get("ADMIN_SECRET")),
         "questions": {
             "collection_1": quiz_manager.get_collection_count(1),
