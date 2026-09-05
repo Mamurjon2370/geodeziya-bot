@@ -64,8 +64,37 @@ async def handle_telegram_update(request: Request):
         logger.error(f"Error handling Telegram webhook update: {e}", exc_info=True)
         return Response(status_code=status.HTTP_200_OK)
 
+def check_secret(secret: str):
+    """
+    Boshqaruv endpointlarini himoyalaydi.
+
+    ADMIN_SECRET environment variable qo'yilmagan bo'lsa - ruxsat beriladi
+    (birinchi deploy to'silib qolmasligi uchun), lekin javobda ogohlantirish chiqadi.
+    Qo'yilgan bo'lsa - ?secret=... majburiy bo'ladi.
+    """
+    expected = os.environ.get("ADMIN_SECRET", "")
+    if not expected:
+        return None  # himoya yoqilmagan
+    if secret != expected:
+        return {
+            "success": False,
+            "error": "Ruxsat yo'q. To'g'ri ?secret=... qiymatini bering."
+        }
+    return None
+
+
+def secret_warning():
+    if not os.environ.get("ADMIN_SECRET"):
+        return ("OGOHLANTIRISH: ADMIN_SECRET qo'yilmagan, bu endpoint ochiq. "
+                "Vercel Environment Variables ga ADMIN_SECRET qo'shing.")
+    return None
+
+
 @app.get("/api/set_webhook")
-async def set_webhook(url: str = None):
+async def set_webhook(url: str = None, secret: str = None):
+    denied = check_secret(secret)
+    if denied:
+        return denied
     target_url = url or config.WEBHOOK_URL
     if not target_url:
         vercel_host = (
@@ -90,6 +119,7 @@ async def set_webhook(url: str = None):
         return {
             "success": success,
             "webhook_url": target_url,
+            "warning": secret_warning(),
             "webhook_info": {
                 "url": info.url,
                 "has_custom_certificate": info.has_custom_certificate,
@@ -101,7 +131,10 @@ async def set_webhook(url: str = None):
         return {"success": False, "error": str(e)}
 
 @app.get("/api/get_webhook_info")
-async def get_webhook_info():
+async def get_webhook_info(secret: str = None):
+    denied = check_secret(secret)
+    if denied:
+        return denied
     try:
         info = await bot.get_webhook_info()
         return {
@@ -116,7 +149,10 @@ async def get_webhook_info():
         return {"success": False, "error": str(e)}
 
 @app.get("/api/delete_webhook")
-async def delete_webhook():
+async def delete_webhook(secret: str = None):
+    denied = check_secret(secret)
+    if denied:
+        return denied
     try:
         success = await bot.delete_webhook(drop_pending_updates=True)
         return {"success": success, "message": "Webhook o'chirildi."}
@@ -135,6 +171,7 @@ async def health():
         "python": sys.version.split()[0],
         "on_vercel": bool(os.environ.get("VERCEL")),
         "bot_token_set": bool(config.BOT_TOKEN and config.BOT_TOKEN != "YOUR_BOT_TOKEN_HERE"),
+        "admin_secret_set": bool(os.environ.get("ADMIN_SECRET")),
         "questions": {
             "collection_1": quiz_manager.get_collection_count(1),
             "collection_2": quiz_manager.get_collection_count(2),
