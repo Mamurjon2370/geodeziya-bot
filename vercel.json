@@ -3,7 +3,18 @@
   "builds": [
     {
       "src": "api/index.py",
-      "use": "@vercel/python"
+      "use": "@vercel/python",
+      "config": {
+        "includeFiles": [
+          "*.py",
+          "handlers/**",
+          "quiz_data_1.json",
+          "quiz_data_2.json",
+          "quiz_bot.db",
+          "media_1/**",
+          "media_2/**"
+        ]
+      }
     }
   ],
   "routes": [

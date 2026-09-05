@@ -122,3 +122,58 @@ async def delete_webhook():
         return {"success": success, "message": "Webhook o'chirildi."}
     except Exception as e:
         return {"success": False, "error": str(e)}
+
+
+@app.get("/api/health")
+async def health():
+    """Deploy tekshiruvi: fayllar va baza serverda joyidami?"""
+    import sqlite3
+    from database import get_db_path
+    from quiz_manager import quiz_manager
+
+    report = {
+        "python": sys.version.split()[0],
+        "on_vercel": bool(os.environ.get("VERCEL")),
+        "bot_token_set": bool(config.BOT_TOKEN and config.BOT_TOKEN != "YOUR_BOT_TOKEN_HERE"),
+        "questions": {
+            "collection_1": quiz_manager.get_collection_count(1),
+            "collection_2": quiz_manager.get_collection_count(2),
+        },
+    }
+
+    # Rasm fayllari lambda ichiga tushganmi?
+    all_q = quiz_manager.data_1 + quiz_manager.data_2
+    with_img = [q["image"] for q in all_q if q.get("image")]
+    found = sum(1 for p in with_img if os.path.exists(p))
+    report["images"] = {
+        "referenced": len(with_img),
+        "found_on_disk": found,
+        "sample": with_img[0] if with_img else None,
+    }
+
+    # Baza yozib bo'ladimi?
+    db_path = get_db_path()
+    try:
+        conn = sqlite3.connect(db_path)
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM users")
+        users = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(*) FROM active_sessions")
+        active = cur.fetchone()[0]
+        conn.close()
+        report["database"] = {
+            "path": db_path,
+            "writable": True,
+            "users": users,
+            "active_sessions": active,
+        }
+    except Exception as e:
+        report["database"] = {"path": db_path, "writable": False, "error": str(e)}
+
+    report["ok"] = (
+        report["bot_token_set"]
+        and report["questions"]["collection_1"] > 0
+        and report["images"]["found_on_disk"] == report["images"]["referenced"]
+        and report["database"].get("writable", False)
+    )
+    return report

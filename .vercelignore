@@ -14,3 +14,6 @@ convert_images.py
 validate_quiz.py
 .git
 .env
+
+# Ishlatilmayotgan WMF nusxalari (Telegram ularni yubora olmaydi)
+*.wmf
