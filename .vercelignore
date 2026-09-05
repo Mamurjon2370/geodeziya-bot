@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+*.docx
+*.log
+inspect_output_*.txt
+structure_*.txt
+analyze_structure.py
+inspect_docs.py
+inspect_edge_cases.py
+parse_all_questions*.py
+extract_all.py
+check_*.py
+convert_images.py
+validate_quiz.py
+.git
+.env

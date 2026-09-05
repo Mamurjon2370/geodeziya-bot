@@ -1,0 +1,21 @@
+# Environment & secrets
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+
+# Large raw documents & extraction scripts
+*.docx
+*.log
+inspect_output_*.txt
+structure_*.txt
+
+# Local SQLite databases (if you don't want to commit test DB)
+# quiz_bot.db
