@@ -55,3 +55,58 @@ python bot.py
 - [quiz_data_1.json](file:///f:/telegram_test/quiz_data_1.json) & [quiz_data_2.json](file:///f:/telegram_test/quiz_data_2.json) — Formatlangan savollar bazasi
 - [media_1/](file:///f:/telegram_test/media_1) & [media_2/](file:///f:/telegram_test/media_2) — Word fayllardan ajratib olingan rasmlar
 - [parse_all_questions_v3.py](file:///f:/telegram_test/parse_all_questions_v3.py) — Yangi Word fayllar yuklanganda savollarni qayta tahlil qilish skripti
+
+---
+
+## ☁️ Vercel'ga Deploy Qilish
+
+Bot serverless webhook rejimida Vercel'da ishlaydi. `main` branchga har bir push
+avtomatik yangi deploy yaratadi.
+
+### Environment Variables
+
+Vercel > Settings > Environments > Production bo'limida:
+
+| Nomi | Majburiymi | Izoh |
+|---|---|---|
+| `BOT_TOKEN` | ha | @BotFather bergan to'liq token, `123456789:AAH...` ko'rinishida — raqamli qismi bilan birga |
+| `ADMIN_ID` | yo'q | Bo'sh qoldirilsa `0` deb olinadi |
+| `ADMIN_SECRET` | yo'q | Qo'yilsa, webhook boshqaruv endpointlari `?secret=...` talab qiladi |
+
+> **Muhim:** Vercel environment o'zgaruvchilarni deploy yaratilayotgan paytda biriktiradi.
+> O'zgaruvchini qo'shgan yoki tahrirlagandan keyin **yangi deploy kerak** — Redeploy
+> tugmasini bosing yoki yangi commit push qiling. Faylsiz (bo'sh) commit yetarli emas:
+> Vercel bir xil fayllar uchun eski build'ni qayta ishlatadi.
+
+### Endpointlar
+
+| Yo'l | Vazifasi |
+|---|---|
+| `GET /` | Bot holati; ishga tushmagan bo'lsa xato sababi |
+| `GET /api/health` | To'liq tashxis: qaysi commit, token bormi, rasmlar va baza joyidami |
+| `GET /api/set_webhook` | Telegram webhook'ini ulaydi |
+| `GET /api/get_webhook_info` | Ulanish holatini ko'rsatadi |
+| `GET /api/delete_webhook` | Webhook'ni uzadi |
+| `POST /api/webhook` | Telegram update'larini qabul qiladi |
+
+Deploy tugagach webhook'ni bir marta ulash kifoya:
+
+```
+https://<loyiha>.vercel.app/api/set_webhook
+```
+
+### ⚠️ Serverless cheklovi
+
+Vercel'da fayl tizimi faqat o'qish uchun, shuning uchun SQLite bazasi `/tmp/quiz_bot.db`
+ga ko'chiriladi. `/tmp` konteyner o'chganda tozalanadi, ya'ni **statistika, reyting,
+xatolar ro'yxati va tugallanmagan test sessiyalari saqlanmaydi.**
+
+Savollar (`quiz_data_*.json`) va rasmlar (`media_*/`) faqat o'qiladi — ular muammosiz ishlaydi.
+
+Ma'lumotlar doimiy saqlanishi kerak bo'lsa, bazani tashqi xizmatga ko'chirish lozim:
+[Turso](https://turso.tech) (bulutdagi SQLite, SQL so'rovlar deyarli o'zgarmaydi),
+Neon yoki Supabase (PostgreSQL).
+
+Doimiy ishlaydigan server (Render, Railway, Fly.io) tanlansa, SQLite fayli diskda
+qoladi va kodni umuman o'zgartirish shart emas — bunda `bot.py` polling rejimida
+ishlatiladi.
