@@ -218,18 +218,21 @@ async def delete_webhook(secret: str = None):
 
 @app.get("/api/health")
 async def health():
-    """Deploy tekshiruvi: fayllar va baza serverda joyidami?"""
-    if INIT_ERROR:
-        return {"ok": False, "init_error": INIT_ERROR,
-                "hint": "BOT_TOKEN ni tekshiring, so'ng Vercelda Redeploy qiling."}
+    """Deploy tekshiruvi: fayllar va baza serverda joyidami?
+
+    Bot ishga tushmagan bo'lsa ham to'liq ishlaydi - fayl va baza holatini
+    tokendan alohida tekshirish uchun.
+    """
     import sqlite3
     from database import get_db_path
     from quiz_manager import quiz_manager
 
+    raw_token = os.environ.get("BOT_TOKEN", "").strip()
     report = {
         "python": sys.version.split()[0],
         "on_vercel": bool(os.environ.get("VERCEL")),
-        "bot_token_set": bool(config.BOT_TOKEN and config.BOT_TOKEN != "YOUR_BOT_TOKEN_HERE"),
+        "init_error": INIT_ERROR,
+        "bot_token_set": bool(raw_token and raw_token != "YOUR_BOT_TOKEN_HERE"),
         "admin_secret_set": bool(os.environ.get("ADMIN_SECRET")),
         "questions": {
             "collection_1": quiz_manager.get_collection_count(1),
@@ -267,7 +270,8 @@ async def health():
         report["database"] = {"path": db_path, "writable": False, "error": str(e)}
 
     report["ok"] = (
-        report["bot_token_set"]
+        INIT_ERROR is None
+        and report["bot_token_set"]
         and report["questions"]["collection_1"] > 0
         and report["images"]["found_on_disk"] == report["images"]["referenced"]
         and report["database"].get("writable", False)
