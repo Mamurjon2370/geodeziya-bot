@@ -13,41 +13,84 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 
-import config
-from database import init_db
-from handlers import start, stats, quiz
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("vercel_webhook")
 
-bot = Bot(
-    token=config.BOT_TOKEN,
-    default=DefaultBotProperties(parse_mode=ParseMode.HTML)
-)
+# Modul yuklanishida chiqqan xato Vercelda bo'sh "500 FUNCTION_INVOCATION_FAILED"
+# sahifasiga aylanadi va sababi ko'rinmaydi. Shuning uchun xatoni ushlab,
+# uni endpointlar orqali o'qiladigan qilib saqlaymiz.
+INIT_ERROR = None
+bot = None
+dp = None
+config = None
+init_db = None
 
-dp = Dispatcher()
-dp.include_router(start.router)
-dp.include_router(stats.router)
-dp.include_router(quiz.router)
+try:
+    import config as _config
+    from database import init_db as _init_db
+    from handlers import start, stats, quiz
+
+    config = _config
+    init_db = _init_db
+
+    bot = Bot(
+        token=config.BOT_TOKEN,
+        default=DefaultBotProperties(parse_mode=ParseMode.HTML)
+    )
+
+    dp = Dispatcher()
+    dp.include_router(start.router)
+    dp.include_router(stats.router)
+    dp.include_router(quiz.router)
+except Exception as exc:
+    INIT_ERROR = f"{type(exc).__name__}: {exc}"
+    logger.error("Bot ishga tushmadi: %s", INIT_ERROR, exc_info=True)
+
+# Vercelning ASGI runtimeida lifespan hodisasi ishga tushmasligi mumkin,
+# shuning uchun bazani import paytida ham tayyorlaymiz (CREATE TABLE IF NOT EXISTS).
+if init_db is not None:
+    try:
+        init_db()
+    except Exception as exc:
+        logger.error("init_db xatosi: %s", exc, exc_info=True)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    init_db()
-    logger.info("Database initialized for serverless instance.")
+    if init_db is not None:
+        try:
+            init_db()
+            logger.info("Database initialized for serverless instance.")
+        except Exception as exc:
+            logger.error("init_db xatosi: %s", exc, exc_info=True)
     yield
-    await bot.session.close()
+    if bot is not None:
+        await bot.session.close()
 
 app = FastAPI(title="Telegram Quiz Bot Webhook", lifespan=lifespan)
 
 @app.get("/")
 async def root():
+    if INIT_ERROR:
+        return {
+            "status": "error",
+            "message": "Bot ishga tushmadi.",
+            "error": INIT_ERROR,
+            "hint": (
+                "Token bilan bog'liq xato bo'lsa: Vercel > Settings > Environment Variables "
+                "da BOT_TOKEN borligini va boshida/oxirida bo'sh joy yo'qligini tekshiring. "
+                "O'zgaruvchi qo'shgandan keyin Deployments > ... > Redeploy qilish SHART."
+            ),
+            "diagnostika": "/api/health"
+        }
     return {
         "status": "ok",
         "message": "Geodeziya va kartografiya Telegram bot Vercel Serverless tizimida ishlamoqda.",
         "endpoints": {
             "webhook": "/api/webhook",
             "set_webhook": "/api/set_webhook",
-            "webhook_info": "/api/get_webhook_info"
+            "webhook_info": "/api/get_webhook_info",
+            "health": "/api/health"
         }
     }
 
@@ -55,6 +98,10 @@ async def root():
 @app.post("/api/webhook")
 @app.post("/webhook")
 async def handle_telegram_update(request: Request):
+    if INIT_ERROR:
+        # Telegramga 200 qaytaramiz, aks holda u xabarni qayta-qayta yuboraveradi.
+        logger.error("Update qabul qilindi, lekin bot ishga tushmagan: %s", INIT_ERROR)
+        return Response(status_code=status.HTTP_200_OK)
     try:
         data = await request.json()
         update = Update.model_validate(data, context={"bot": bot})
@@ -95,6 +142,9 @@ async def set_webhook(url: str = None, secret: str = None):
     denied = check_secret(secret)
     if denied:
         return denied
+    if INIT_ERROR:
+        return {"success": False, "error": INIT_ERROR,
+                "hint": "Avval / yoki /api/health ni oching — sabab va yechim ko'rsatilgan."}
     target_url = url or config.WEBHOOK_URL
     if not target_url:
         vercel_host = (
@@ -135,6 +185,9 @@ async def get_webhook_info(secret: str = None):
     denied = check_secret(secret)
     if denied:
         return denied
+    if INIT_ERROR:
+        return {"success": False, "error": INIT_ERROR,
+                "hint": "Avval / yoki /api/health ni oching — sabab va yechim ko'rsatilgan."}
     try:
         info = await bot.get_webhook_info()
         return {
@@ -153,6 +206,9 @@ async def delete_webhook(secret: str = None):
     denied = check_secret(secret)
     if denied:
         return denied
+    if INIT_ERROR:
+        return {"success": False, "error": INIT_ERROR,
+                "hint": "Avval / yoki /api/health ni oching — sabab va yechim ko'rsatilgan."}
     try:
         success = await bot.delete_webhook(drop_pending_updates=True)
         return {"success": success, "message": "Webhook o'chirildi."}
@@ -163,6 +219,9 @@ async def delete_webhook(secret: str = None):
 @app.get("/api/health")
 async def health():
     """Deploy tekshiruvi: fayllar va baza serverda joyidami?"""
+    if INIT_ERROR:
+        return {"ok": False, "init_error": INIT_ERROR,
+                "hint": "BOT_TOKEN ni tekshiring, so'ng Vercelda Redeploy qiling."}
     import sqlite3
     from database import get_db_path
     from quiz_manager import quiz_manager
